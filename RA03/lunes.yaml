@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Plantilla CloudFormation con VPC, subred pública/privada, IGW, EIGW y enrutamiento IPv4/IPv6.'
+
+Parameters:
+  NN:
+    Type: String
+    Default: '01'
+    Description: 'Identificador numérico de dos dígitos para personalizar el CIDR y las etiquetas (ej. 01).'
+    AllowedPattern: '^\d{2}$'
+
+Resources:
+  # 1. VPC con IPv4 personalizado (Sin propiedades IPv6 aquí)
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub '10.1${NN}.0.0/16'
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-${NN}-VPC'
+
+  # 1.1. Recurso independiente para asociar el bloque IPv6 de AWS a la VPC
+  VPCIPv6CidrBlock:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      AmazonProvidedIpv6CidrBlock: true
+
+  # 2. Internet Gateway (IGW)
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-${NN}-IGW'
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # 3. Egress-Only Internet Gateway (EIGW) para IPv6 privado
+  EgressOnlyInternetGateway:
+    Type: AWS::EC2::EgressOnlyInternetGateway
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-${NN}-EIGW'
+
+  # 4. Subred Pública (/24)
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPCIPv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Sub '10.1${NN}.1.0/24'
+      Ipv6CidrBlock: !Select
+        - 0
+        - !Cidr
+          - !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+          - 2
+          - 64
+      MapPublicIpOnLaunch: true
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-${NN}-PublicSubnet'
+
+  # 5. Subred Privada (/24)
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPCIPv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Sub '10.1${NN}.2.0/24'
+      Ipv6CidrBlock: !Select
+        - 1
+        - !Cidr
+          - !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+          - 2
+          - 64
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-${NN}-PrivateSubnet'
+
+  # 6. Tabla de Enrutamiento Pública
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-${NN}-PublicRouteTable'
+
+  PublicRouteIPv4:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteIPv6:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationIpv6CidrBlock: '::/0'
+      GatewayId: !Ref InternetGateway
+
+  # 7. Tabla de Enrutamiento Privada
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-${NN}-PrivateRouteTable'
+
+  PrivateRouteIPv6:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationIpv6CidrBlock: '::/0'
+      EgressOnlyInternetGatewayId: !Ref EgressOnlyInternetGateway
+
+  # 8. Asociaciones de Tablas de Enrutamiento
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+Outputs:
+  VpcId:
+    Description: 'ID de la VPC'
+    Value: !Ref VPC
+  PublicSubnetId:
+    Description: 'ID de la subred pública'
+    Value: !Ref PublicSubnet
+  PrivateSubnetId:
+    Description: 'ID de la subred privada'
+    Value: !Ref PrivateSubnet
