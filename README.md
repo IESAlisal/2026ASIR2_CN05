@@ -12,7 +12,7 @@ Debe asignar por defecto IPv4 pública e IPv6 en la subred pública e IPv6 en la
 
 ## 📁 Archivos
 
-### ☁️ `VPC_2Subnet_IGW_EIGW.yaml`
+### ☁️ `VPC_EC2.yaml`
 
 Plantilla de AWS CloudFormation que crea:
 
@@ -21,10 +21,25 @@ Plantilla de AWS CloudFormation que crea:
 - Un Internet Gateway (IGW) y un Egress-Only Internet Gateway (EIGW).
 - Tablas de rutas: la subred pública tiene salida IPv4 e IPv6 mediante el IGW; la privada tiene salida IPv6 mediante el EIGW.
 - Las asociaciones entre subredes y tablas de rutas.
+- Una instancia Ubuntu 24.04 LTS x86_64 en la subred pública, con Apache, PHP y WordPress instalados mediante *user data* basado en el script de `RA03`.
+- Un grupo de seguridad que permite HTTP IPv4 desde el rango configurado, sin abrir SSH. La administración se realiza mediante Systems Manager Session Manager.
+- Un rol y un perfil IAM para Systems Manager y CloudWatch Agent, y un grupo de logs con 30 días de retención.
 
-El parámetro `NN` es un identificador de dos dígitos que personaliza los bloques CIDR IPv4 y las etiquetas de los recursos. La plantilla devuelve los identificadores de la VPC y de ambas subredes.
+El parámetro `NN` es un identificador de dos dígitos que personaliza los bloques CIDR IPv4 y las etiquetas de los recursos. `InstanceType` permite elegir entre `t3.micro`, `t3.small` y `t3.medium`. `UbuntuAmi` selecciona el parámetro público de Systems Manager para la AMI oficial de Ubuntu 24.04 x86_64; si se cambia, debe apuntar a una AMI compatible con el script. `WebAccessCidr` controla el acceso HTTP IPv4 y por defecto permite cualquier origen; es recomendable restringirlo, especialmente durante la instalación. No se habilita acceso HTTP entrante por IPv6.
 
-### 🖥️ `userdata_cloudwatch_systemmanager_Wordpress.sh`
+La plantilla devuelve los identificadores de la VPC, las subredes y la instancia, la URL HTTP inicial y el nombre del grupo de logs. El *user data* integrado usa la región de la pila y su propio grupo de logs; el script independiente conserva sus valores originales.
+
+WordPress necesita una base de datos MySQL o MariaDB externa: la plantilla no crea RDS ni configura sus credenciales. Debe ser accesible desde la instancia, con sus reglas de red correspondientes. Tras el arranque, abre la URL indicada en `WordPressUrl` desde una dirección permitida y completa el asistente con los datos de la base de datos. Protege la instalación: HTTP no cifra credenciales ni tráfico; para producción configura HTTPS y restringe el acceso. La dirección IP pública puede cambiar si se detiene y arranca la instancia.
+
+Ejemplo de despliegue (sustituye el rango por tu IP o red):
+
+```bash
+aws cloudformation deploy --template-file VPC_EC2.yaml --stack-name wordpress --capabilities CAPABILITY_IAM --parameter-overrides NN=01 WebAccessCidr=203.0.113.0/24
+```
+
+La creación de la pila no garantiza que el *user data* haya terminado correctamente. Consulta `/var/log/cloud-init-output.log` mediante Session Manager si falla la instalación; después comprueba los logs de syslog y Apache en el grupo de CloudWatch indicado en las salidas. La instancia, el volumen y los servicios utilizados pueden generar costes.
+
+### 🖥️ `RA03/userdata_cloudwatch_systemmanager_Wordpress.sh`
 
 Script de *user data* para una instancia Ubuntu. Instala y configura:
 
@@ -43,7 +58,7 @@ El script prepara los archivos de WordPress, pero no crea ni configura la base d
 Ejecutar la plantilla
 Comprobar que se crean los recursos y que las subredes tienen direccionamiento IPv4 e IPv6.
 
-### 🖥️ Creación de EC2 con el script de *user data* y *LabRole*
+### 🖥️ Comprobar la EC2 y el *user data*
 
 * Comprobar Apache con Wordpress
 * Comprobar acceso por System Manager (Sin puerto 22)
