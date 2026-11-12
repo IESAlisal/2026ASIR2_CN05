@@ -2,7 +2,7 @@
 set -e
  
 apt-get update -y
-
+apt-get upgrade -y
 # Instalar SSM Agent en Ubuntu
 snap install amazon-ssm-agent --classic
 systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service
