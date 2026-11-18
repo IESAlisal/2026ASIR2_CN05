@@ -230,7 +230,7 @@ Resources:
           set -e
 
           apt-get update -y
-
+          apt-get upgrade -y
           # Las AMI oficiales de Ubuntu pueden incluir ya el agente de SSM.
           if ! snap list amazon-ssm-agent >/dev/null 2>&1; then
             snap install amazon-ssm-agent --classic

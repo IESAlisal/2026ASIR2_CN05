@@ -2,6 +2,7 @@
 set -e
  
 apt-get update -y
+apt-get upgrade -y
 
 # Instalar SSM Agent en Ubuntu
 snap install amazon-ssm-agent --classic
@@ -30,7 +31,7 @@ rm -R wordpress
 chown -R www-data:www-data /var/www/html/
 
 # Configurar CloudWatch Logs
-LOG_GROUP="/ec2/ubuntu24"
+LOG_GROUP="/ec2/ubuntu_wp"
 REGION="us-east-1"
 # Instalar CloudWatch Agent  INICIO #############################
 # https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/download-CloudWatch-Agent-on-EC2-Instance-commandline-first.html
@@ -50,7 +51,7 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<EOF
           {
             "file_path": "/var/log/syslog",
             "log_group_name": "$LOG_GROUP",
-            "log_stream_name": "{instance_id}",
+            "log_stream_name": "{instance_id}-syslog",
             "timezone": "UTC"
           },
           {
